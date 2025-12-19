@@ -33,7 +33,6 @@ def decode_dct(path):
             block = arr[i:i+8, j:j+8] - 128
             D = Q[cx,cy] * dct2(block)
             QD = np.round(D / Q)
-            #print(QD[cx,cy])
             TH += (QD[cx,cy]/8)
             cnt += 1
             if cnt == 8:
@@ -54,7 +53,6 @@ def decode_dct(path):
             block = arr[i:i+8, j:j+8] - 128
             D = Q[cx,cy] * dct2(block)
             QD = np.round(D / Q)
-            #print(QD[cx,cy]) 
             if (QD[cx, cy] > TH):
                 bits += str(1)
                 TH = alpha * TH + (1-alpha) * QD[cx, cy]
@@ -90,7 +88,6 @@ def decode_dct(path):
             block = arr[i:i+8, j:j+8] - 128
             D = Q[cx,cy] * dct2(block)
             QD = np.round(D / Q)
-            #print(QD[cx,cy])
             if (QD[cx, cy] > TH):
                 bits += str(1)
                 TH = alpha * TH + (1-alpha) * QD[cx, cy]
@@ -98,7 +95,6 @@ def decode_dct(path):
                 bits += str(0) 
                 TH = alpha * TH + (1-alpha) * QD[cx, cy]
 
-            # bits += str(int(QD[cx, cy]) & 1)
             collected += 1
 
         if collected >= msg_bits:
