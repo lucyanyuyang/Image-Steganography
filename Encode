@@ -1,0 +1,90 @@
+from PIL import Image
+
+def to_binary(data):
+    """
+    Converts the secret data into a full bitstream, preceded by a 16-bit 
+    header indicating the length of the *original* secret data string (in bytes).
+    """
+    # 1. Calculate the length of the secret data string (in bytes)
+    data_length_bytes = len(data.encode('utf-8'))
+    
+    # 2. Format the length as a 16-bit binary string (the Header)
+    length_header_bits = format(data_length_bytes, '016b')
+    
+    # 3. Format the data itself as 8-bit binary strings
+    data_bits_list = [format(ord(i), '08b') for i in data]
+    
+    # 4. Concatenate the header bits and all data bits into a single list of strings
+    full_bitstream = [length_header_bits] + data_bits_list
+    
+    return full_bitstream
+
+def embed_data_in_pixels(flat_pixels, secret_data):
+    """
+    Embeds the binary data (including the 16-bit length header) into the LSB 
+    of the pixel values.
+    """
+    binary_data_list = to_binary(secret_data)
+    
+    # Convert the list of binary strings into one continuous bit string
+    full_bits_string = "".join(binary_data_list)
+    
+    total_bits = len(full_bits_string)
+    data_index = 0
+    
+    for i in range(len(flat_pixels)):
+        if data_index < total_bits:
+            message_bit = int(full_bits_string[data_index])
+            pixel_value = flat_pixels[i]
+            
+            # LSB Modification: (pixel_value & 0xFE) clears the LSB, 
+            # then | message_bit inserts the new bit.
+            new_value = (pixel_value & 0xFE) | message_bit
+            flat_pixels[i] = new_value
+            data_index += 1
+        else:
+            break
+      
+    return flat_pixels
+
+def encode(image_path, secret_message, output_path="stego_image.png"):
+    img = Image.open(image_path, 'r').convert("RGB") # Ensure RGB mode for consistent 3 channels
+    width, height = img.size
+    
+    pixels = list(img.getdata())
+    # Flatten pixels, only taking RGB (first 3 channels)
+    flat_pixels = [val for sublist in pixels for val in sublist[:3]]
+    
+    # --- CAPACITY CHECK MODIFIED FOR 16-BIT HEADER ---
+    
+    # 16 bits for length header + (Message length in bytes * 8 bits/byte)
+    required_bits = 16 + (len(secret_message.encode('utf-8')) * 8)
+    
+    if len(flat_pixels) < required_bits:
+        print(f"Required bits: {required_bits}, Available LSBs: {len(flat_pixels)}")
+        raise ValueError("Secret message is too long for this image! Need 16 bits for header.")
+
+    new_flat_pixels = embed_data_in_pixels(flat_pixels, secret_message)
+    
+    new_data = []
+    # Reassemble the list into tuples for Image.putdata()
+    for i in range(0, len(new_flat_pixels), 3):
+        
+        r = new_flat_pixels[i]
+        g = new_flat_pixels[i+1]
+        b = new_flat_pixels[i+2]
+        
+        # If the original image was RGBA, we need to preserve the A channel
+        original_pixel = pixels[i//3]
+        if len(original_pixel) == 4:
+            a = original_pixel[3]
+            new_data.append((r, g, b, a))
+        else:
+            new_data.append((r, g, b))
+
+    # Determine the correct mode based on the original image or explicitly set
+    mode = img.mode 
+    new_img = Image.new(mode, (width, height))
+    new_img.putdata(new_data)
+    new_img.save(output_path)
+    
