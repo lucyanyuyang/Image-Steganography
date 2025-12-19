@@ -1,0 +1,114 @@
+import numpy as np
+from PIL import Image
+
+def decode(stego_image_path):
+    """
+    Decodes LSB data by extracting the 16-bit length header, 
+    then reading the exact number of message bits based on that length.
+    
+    This is the standard and correct decoding method for the defined bit structure.
+    """
+    try:
+        img = Image.open(stego_image_path, 'r').convert("RGB")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Stego image '{stego_image_path}' not found.")
+        
+    pixels = list(img.getdata())
+    
+    # 1. Extract the entire LSB stream (as a list of integers 0 or 1)
+    extracted_lsb_int = []
+    for pixel in pixels:
+        # Extract LSB from R, G, and B channels
+        for value in pixel[:3]: 
+            extracted_lsb_int.append(value & 1)
+            
+    # Check if we have enough bits for the header 
+    if len(extracted_lsb_int) < 16:
+        return "Image too small to contain the 16-bit length header."
+
+    # 2. Read the 16-bit Length Header
+    
+    length_header_bits = extracted_lsb_int[:16]
+    length_binary_string = "".join(str(b) for b in length_header_bits)
+    
+    # Convert the binary string to an integer (the message length in bytes)
+    msg_len_bytes = int(length_binary_string, 2)
+    
+    # Calculate the total number of data bits needed (excluding the 16-bit header)
+    total_data_bits_needed = msg_len_bytes * 8
+    
+    print(f"\n--- Decoding Setup ---")
+    print(f"Decoded Message Length (bytes): {msg_len_bytes}")
+    print(f"Total data bits expected: {total_data_bits_needed}")
+
+    # 3. Extract the Message Data
+    
+    # The message data starts right after the 16-bit header
+    data_start_index = 16
+    data_end_index = data_start_index + total_data_bits_needed
+    
+    # Check if the expected data length exceeds the available LSBs
+    if len(extracted_lsb_int) < data_end_index:
+        # If the image was attacked and truncated, report it.
+        print("Warning: Image truncated or corrupted.")
+        data_end_index = len(extracted_lsb_int)
+    
+    # Extract the raw LSBs corresponding to the message data
+    raw_message_bits = extracted_lsb_int[data_start_index : data_end_index]
+    
+    # Convert the list of bits back into a single binary string
+    binary_data = "".join(str(b) for b in raw_message_bits)
+
+    # 4. Reconstruct the Message String
+    decoded_message = ""
+    for i in range(0, len(binary_data), 8):
+        byte = binary_data[i: i+8]
+        if len(byte) == 8: # Only convert complete bytes
+            char = chr(int(byte, 2))
+            decoded_message += char
+
+    return decoded_message
+
+def calculate_ber(original_message, decoded_message):
+    """
+    Calculates the Bit Error Rate (BER) between the original and decoded messages.
+    """
+    if not original_message or not decoded_message:
+        print("Error: Both original and decoded messages must be non-empty.")
+        return None
+
+    # 1. Convert messages to full binary strings (8 bits per character)
+    
+    # Original (Ground Truth) Bitstream
+    original_bits = ''.join(format(ord(c), '08b') for c in original_message)
+    
+    # Decoded Bitstream (Extracted Result)
+    decoded_bits = ''.join(format(ord(c), '08b') for c in decoded_message)
+    
+    # 2. Match the lengths (If they differ, it means the message was truncated/corrupted)
+    # We only compare up to the length of the shorter stream.
+    min_length = min(len(original_bits), len(decoded_bits))
+    
+    original_bits = original_bits[:min_length]
+    decoded_bits = decoded_bits[:min_length]
+    
+    total_bits = min_length
+    error_count = 0
+
+    # 3. Compare bit-by-bit
+    for bit_orig, bit_dec in zip(original_bits, decoded_bits):
+        if bit_orig != bit_dec:
+            error_count += 1
+            
+    # 4. Calculate BER
+    if total_bits == 0:
+        return 0.0
+
+    ber = error_count / total_bits
+    
+    print(f"\n--- BER Calculation Results ---")
+    print(f"Total bits compared: {total_bits}")
+    print(f"Number of bit errors: {error_count}")
+    print(f"Bit Error Rate (BER): {ber:.6f}")
+    
+    return ber
